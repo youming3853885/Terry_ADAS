@@ -528,7 +528,7 @@
       </div>
       <div class="control-actions">
         <button class="btn" onclick="reconnectMQTT()">🔄 重新連線</button>
-        <button class="btn" onclick="sendConfig()">🚀 發送設定</button>
+        <button class="btn" onclick="sendConfig(event)">🚀 發送設定</button>
         <div class="mqtt-status">
           <div class="status-dot" id="mqttDot"></div>
           <span id="mqttStatus">MQTT 未連線</span>
@@ -650,66 +650,88 @@
 
     // MQTT Connection
     function connectMQTT() {
-      const broker = document.getElementById('inputBroker').value;
-      const wssPort = document.getElementById('inputWssPort').value;
+      const broker = document.getElementById('inputBroker').value.trim();
+      const wssPort = document.getElementById('inputWssPort').value.trim();
 
-      console.log('[MQTT] 開始連線...');
-      const clientId = 'TerryCar_Web_' + Math.random().toString(16).substr(2, 8);
+      // 1. 建立連線連線字串 (注意：瀏覽器端 mqtt.js 會自動處理 wss 協定)
+      // 如果連線失敗，請嘗試將 connectUrl 改為 `wss://${broker}:${wssPort}/mqtt`
+      // 或者透過 options 裡的 path 參數來設定
+      const connectUrl = `wss://${broker}:${wssPort}`;
 
-      // WSS (WebSocket Secure) 連線
-      const wsUrl = `wss://${broker}:${wssPort}/mqtt`;
-      console.log('[MQTT] 連線 URL:', wsUrl);
+      const options = {
+        clientId: 'TerryCar_Web_' + Math.random().toString(16).substr(2, 8),
+        keepalive: 60,
+        clean: true,
+        connectTimeout: 5000,
+        reconnectPeriod: 2000,
+        // MQTTGO 與 EMQX 通常需要這個 path，如果連不上可以試著註解掉此行
+        path: '/mqtt',
+      };
 
+      console.log('%c[MQTT] 正在嘗試連線至:', 'color: #ff6b35; font-weight: bold;', connectUrl);
+
+      // 如果已有舊連線，先切斷
       if (mqttClient && mqttClient.connected) {
         mqttClient.end();
       }
 
-      mqttClient = mqtt.connect(wsUrl, {
-        clientId: clientId,
-        clean: true,
-        connectTimeout: 8000,
-        reconnectPeriod: 5000
-      });
+      // 2. 啟動連線
+      mqttClient = mqtt.connect(connectUrl, options);
 
+      // --- 事件監聽 ---
+
+      // 連線成功
       mqttClient.on('connect', () => {
-        console.log('[MQTT] 連線成功！');
+        console.log('%c[MQTT] 連線成功！', 'color: #00d4aa; font-weight: bold;');
         document.getElementById('mqttDot').classList.add('connected');
         document.getElementById('mqttStatus').textContent = 'MQTT 已連線';
 
-        mqttClient.subscribe(MQTT_TOPIC_STS, {qos: 0}, (err) => {
-          if (!err) console.log('[MQTT] 已訂閱:', MQTT_TOPIC_STS);
+        // 訂閱狀態主題
+        mqttClient.subscribe(MQTT_TOPIC_STS, { qos: 0 }, (err) => {
+          if (!err) {
+            console.log(`%c[MQTT] 已訂閱主題: ${MQTT_TOPIC_STS}`, 'color: #00d4aa;');
+          }
         });
       });
 
+      // 接收訊息
       mqttClient.on('message', (topic, message) => {
         try {
           const payload = JSON.parse(message.toString());
-          console.log('[MQTT] 收到:', payload);
-          updateLiveStatus(payload);
+          console.log('%c[MQTT] 收到數據:', 'color: #00d4aa;', payload);
+
+          // 更新即時監控面板
+          if (topic === MQTT_TOPIC_STS) {
+            updateLiveStatus(payload);
+          }
         } catch (error) {
-          console.error('[MQTT] 解析訊息失敗:', error);
+          console.warn('%c[MQTT] 解析訊息失敗，非 JSON 格式:', 'color: #ffd93d;', message.toString());
         }
       });
 
+      // 連線錯誤處理
       mqttClient.on('error', (err) => {
-        console.error('[MQTT] 錯誤:', err.message);
-        document.getElementById('mqttStatus').textContent = 'MQTT 錯誤';
+        console.error('%c[MQTT] 連線出錯:', 'color: #ff4757; font-weight: bold;', err);
+        document.getElementById('mqttStatus').textContent = 'MQTT 連線錯誤';
+        document.getElementById('mqttDot').classList.remove('connected');
       });
 
+      // 斷線處理
       mqttClient.on('offline', () => {
-        console.log('[MQTT] 離線');
+        console.warn('%c[MQTT] 伺服器離線', 'color: #ffd93d;');
+        document.getElementById('mqttStatus').textContent = 'MQTT 伺服器離線';
         document.getElementById('mqttDot').classList.remove('connected');
-        document.getElementById('mqttStatus').textContent = 'MQTT 離線';
       });
 
+      // 重新連線中
       mqttClient.on('reconnect', () => {
-        console.log('[MQTT] 重新連線中...');
-        document.getElementById('mqttStatus').textContent = 'MQTT 重新連線...';
+        console.log('%c[MQTT] 重新連線中...', 'color: #ff6b35;');
+        document.getElementById('mqttStatus').textContent = '重新連線中...';
       });
 
+      // 連線關閉
       mqttClient.on('close', () => {
-        console.log('[MQTT] 連線關閉');
-        document.getElementById('mqttDot').classList.remove('connected');
+        console.log('%c[MQTT] 連線已關閉', 'color: #8b95a5;');
       });
     }
 
@@ -736,7 +758,7 @@
     }
 
     // Send configuration to ESP32 via MQTT
-    function sendConfig() {
+    function sendConfig(event) {
       const speed = parseInt(document.getElementById('inputSpeed').value);
       const brake = parseFloat(document.getElementById('inputBrake').value);
 
@@ -752,11 +774,19 @@
       const payload = JSON.stringify({ speed: speed, brake: brake });
 
       if (mqttClient && mqttClient.connected) {
-        mqttClient.publish(MQTT_TOPIC_CMD, payload);
-        console.log('[MQTT] 已發送:', payload);
-        alert('已發送設定至 ESP32！\n速度: PWM ' + speed + '\n煞車觸發: ' + brake + ' cm');
+        mqttClient.publish(MQTT_TOPIC_CMD, payload, { qos: 1 });
+        console.log('%c[MQTT] 已發送設定:', 'color: #00d4aa; font-weight: bold;', payload);
+        // 增加視覺反饋
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = '✅ 已發送';
+        btn.disabled = true;
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.disabled = false;
+        }, 2000);
       } else {
-        alert('MQTT 未連線，請稍後再試');
+        alert('MQTT 未連線，請先連線後再發送指令');
       }
     }
 

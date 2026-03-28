@@ -790,16 +790,31 @@
         const response = await fetch(API_URL);
         const result = await response.json();
 
+        console.log('[Data] API 回應:', result);
+
         if (result.status === 'success' && result.data) {
-          allData = result.data.map(row => ({
-            PWM: parseInt(row.PWM) || 0,
-            初始速度: parseFloat(row.初始速度) || 0,
-            障礙距: parseFloat(row.障礙距) || 0,
-            TTC: parseFloat(row.TTC) || 0,
-            剎車距: parseFloat(row.剎車距) || 0,
-            緩衝距: parseFloat(row.緩衝距) || 0,
-            時間: row.時間 || ''
-          }));
+          allData = result.data.map(row => {
+            // 嘗試多種可能的欄位名稱
+            const pwm = row.PWM || row.pwm || row[0] || 0;
+            const speed = row.初始速度 || row.speed || row[1] || 0;
+            const obstacle = row.障礙距 || row.obstacle || row[2] || 0;
+            const ttc = row.TTC || row.ttc || row[3] || 0;
+            const brake = row.剎車距 || row.brake || row[4] || 0;
+            const buffer = row.緩衝距 || row.buffer || row[5] || 0;
+            const time = row.時間 || row.time || row[6] || '';
+
+            return {
+              PWM: parseInt(pwm) || 0,
+              初始速度: parseFloat(speed) || 0,
+              障礙距: parseFloat(obstacle) || 0,
+              TTC: parseFloat(ttc) || 0,
+              剎車距: parseFloat(brake) || 0,
+              緩衝距: parseFloat(buffer) || 0,
+              時間: time
+            };
+          });
+
+          console.log('[Data] 解析後資料:', allData);
           filteredData = [...allData];
           updateStats();
           updateCharts();

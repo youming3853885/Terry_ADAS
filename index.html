@@ -510,6 +510,14 @@
       <div class="control-title">遠端控制面板</div>
       <div class="control-grid">
         <div class="control-group">
+          <label>MQTT Broker URL</label>
+          <input type="text" id="inputBroker" value="broker.MQTTGO.io" placeholder="broker.MQTTGO.io">
+        </div>
+        <div class="control-group">
+          <label>WSS Port</label>
+          <input type="number" id="inputWssPort" value="8084" min="1" max="65535">
+        </div>
+        <div class="control-group">
           <label>馬達速度 (PWM 0-255)</label>
           <input type="number" id="inputSpeed" min="0" max="255" value="255">
         </div>
@@ -519,6 +527,7 @@
         </div>
       </div>
       <div class="control-actions">
+        <button class="btn" onclick="reconnectMQTT()">🔄 重新連線</button>
         <button class="btn" onclick="sendConfig()">🚀 發送設定</button>
         <div class="mqtt-status">
           <div class="status-dot" id="mqttDot"></div>
@@ -621,8 +630,7 @@
     // Google Apps Script API URL
     const API_URL = 'https://script.google.com/macros/s/AKfycbyLbJMM8CIDVdwpZM2v6pxTtUHX-nIvFiKOgrPDUsqM6jBO9kF_YNRsGbzsmMpYhAjN/exec';
 
-    // MQTT Configuration - mqttgo.io (使用 WebSocket)
-    const MQTT_BROKER = 'broker.mqttgo.io';
+    // MQTT Topics
     const MQTT_TOPIC_CMD = 'TerryCar/cmd';
     const MQTT_TOPIC_STS = 'TerryCar/status';
 
@@ -642,56 +650,52 @@
 
     // MQTT Connection
     function connectMQTT() {
+      const broker = document.getElementById('inputBroker').value;
+      const wssPort = document.getElementById('inputWssPort').value;
+
       console.log('[MQTT] 開始連線...');
       const clientId = 'TerryCar_Web_' + Math.random().toString(16).substr(2, 8);
 
-      // MQTTGO.io 的 WSS (WebSocket Secure) 連線
-      const wsUrls = [
-        'wss://broker.MQTTGO.io:8084/mqtt',
-        'wss://broker.MQTTGO.io:8443/mqtt'
-      ];
+      // WSS (WebSocket Secure) 連線
+      const wsUrl = `wss://${broker}:${wssPort}/mqtt`;
+      console.log('[MQTT] 連線 URL:', wsUrl);
 
-      let currentUrlIndex = 0;
+      if (mqttClient && mqttClient.connected) {
+        mqttClient.end();
+      }
 
-      function tryConnect() {
-        if (currentUrlIndex >= wsUrls.length) {
-          console.log('[MQTT] 所有連線嘗試失敗');
-          document.getElementById('mqttStatus').textContent = 'MQTT 連線失敗';
-          return;
-        }
+      mqttClient = mqtt.connect(wsUrl, {
+        clientId: clientId,
+        clean: true,
+        connectTimeout: 8000,
+        reconnectPeriod: 5000
+      });
 
-        const wsUrl = wsUrls[currentUrlIndex];
-        console.log('[MQTT] 嘗試連線:', wsUrl);
+      mqttClient.on('connect', () => {
+        console.log('[MQTT] 連線成功！');
+        document.getElementById('mqttDot').classList.add('connected');
+        document.getElementById('mqttStatus').textContent = 'MQTT 已連線';
 
-        mqttClient = mqtt.connect(wsUrl, {
-          clientId: clientId,
-          clean: true,
-          connectTimeout: 8000,
-          reconnectPeriod: 3000
+        mqttClient.subscribe(MQTT_TOPIC_STS, (err) => {
+          if (!err) console.log('[MQTT] 已訂閱:', MQTT_TOPIC_STS);
         });
+      });
 
-        mqttClient.on('connect', () => {
-          console.log('[MQTT] 連線成功！');
-          document.getElementById('mqttDot').classList.add('connected');
-          document.getElementById('mqttStatus').textContent = 'MQTT 已連線';
-
-          mqttClient.subscribe(MQTT_TOPIC_STS, (err) => {
-            if (!err) console.log('[MQTT] 已訂閱:', MQTT_TOPIC_STS);
-          });
-        });
-
-        mqttClient.on('error', (err) => {
-          console.log('[MQTT] 連線失敗:', err.message);
-          currentUrlIndex++;
-          tryConnect();
-        });
+      mqttClient.on('error', (err) => {
+        console.log('[MQTT] 連線失敗:', err.message);
+        document.getElementById('mqttStatus').textContent = 'MQTT 連線失敗';
+      });
 
         mqttClient.on('close', () => {
           console.log('[MQTT] 連線關閉');
+          document.getElementById('mqttDot').classList.remove('connected');
         });
       }
+    }
 
-      tryConnect();
+    // Reconnect MQTT with new settings
+    function reconnectMQTT() {
+      connectMQTT();
     }
 
     // Update live status display

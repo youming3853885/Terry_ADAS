@@ -645,12 +645,11 @@
       console.log('[MQTT] 開始連線...');
       const clientId = 'TerryCar_Web_' + Math.random().toString(16).substr(2, 8);
 
-      // 嘗試 mqttgo.io 的 WebSocket 連線
-      // 先嘗試 8080，若失敗會自動重連嘗試其他連線方式
+      // mqttgo.io 的 WSS (WebSocket Secure) 連線
       const wsUrls = [
-        'ws://broker.mqttgo.io:8080/mqtt',
-        'ws://broker.mqttgo.io:8083/mqtt',
-        'ws://broker.mqttgo.io:8443/mqtt'
+        'wss://broker.mqttgo.io:8443/mqtt',
+        'wss://broker.mqttgo.io:8083/mqtt',
+        'wss://broker.mqttgo.io:8080/mqtt'
       ];
 
       let currentUrlIndex = 0;

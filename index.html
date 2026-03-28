@@ -621,8 +621,8 @@
     // Google Apps Script API URL
     const API_URL = 'https://script.google.com/macros/s/AKfycbyLbJMM8CIDVdwpZM2v6pxTtUHX-nIvFiKOgrPDUsqM6jBO9kF_YNRsGbzsmMpYhAjN/exec';
 
-    // MQTT Configuration
-    const MQTT_BROKER = 'broker.mqttgo.io';
+    // MQTT Configuration - 使用 HiveMQ 公共 Broker（支援瀏覽器）
+    const MQTT_BROKER = 'broker.hivemq.com';
     const MQTT_TOPIC_CMD = 'TerryCar/cmd';
     const MQTT_TOPIC_STS = 'TerryCar/status';
 
@@ -645,8 +645,8 @@
       console.log('[MQTT] 開始連線...');
       const clientId = 'TerryCar_Web_' + Math.random().toString(16).substr(2, 8);
 
-      // 使用完整 WebSocket URL
-      const wsUrl = `ws://${MQTT_BROKER}:8083/mqtt`;
+      // HiveMQ WebSocket port
+      const wsUrl = `ws://${MQTT_BROKER}:8000/mqtt`;
       console.log('[MQTT] 連線 URL:', wsUrl);
 
       mqttClient = mqtt.connect(wsUrl, {

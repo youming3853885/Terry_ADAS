@@ -55,7 +55,7 @@ const char* WIFI_PASSWORD = "webduino01";
 const char* GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyLbJMM8CIDVdwpZM2v6pxTtUHX-nIvFiKOgrPDUsqM6jBO9kF_YNRsGbzsmMpYhAjN/exec";
 
 // ── MQTT 設定 ────────────────────────────────────────────────
-const char* MQTT_BROKER   = "broker.mqttgo.io";
+const char* MQTT_BROKER   = "broker.hivemq.com";
 const int   MQTT_PORT     = 1883;
 const char* MQTT_CLIENT_ID = "TerryCar_ESP32";
 const char* MQTT_TOPIC_CMD = "TerryCar/cmd";     // 接收命令（網頁發送）

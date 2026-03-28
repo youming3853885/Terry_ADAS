@@ -676,21 +676,41 @@
         document.getElementById('mqttDot').classList.add('connected');
         document.getElementById('mqttStatus').textContent = 'MQTT 已連線';
 
-        mqttClient.subscribe(MQTT_TOPIC_STS, (err) => {
+        mqttClient.subscribe(MQTT_TOPIC_STS, {qos: 0}, (err) => {
           if (!err) console.log('[MQTT] 已訂閱:', MQTT_TOPIC_STS);
         });
       });
 
-      mqttClient.on('error', (err) => {
-        console.log('[MQTT] 連線失敗:', err.message);
-        document.getElementById('mqttStatus').textContent = 'MQTT 連線失敗';
+      mqttClient.on('message', (topic, message) => {
+        try {
+          const payload = JSON.parse(message.toString());
+          console.log('[MQTT] 收到:', payload);
+          updateLiveStatus(payload);
+        } catch (error) {
+          console.error('[MQTT] 解析訊息失敗:', error);
+        }
       });
 
-        mqttClient.on('close', () => {
-          console.log('[MQTT] 連線關閉');
-          document.getElementById('mqttDot').classList.remove('connected');
-        });
-      }
+      mqttClient.on('error', (err) => {
+        console.error('[MQTT] 錯誤:', err.message);
+        document.getElementById('mqttStatus').textContent = 'MQTT 錯誤';
+      });
+
+      mqttClient.on('offline', () => {
+        console.log('[MQTT] 離線');
+        document.getElementById('mqttDot').classList.remove('connected');
+        document.getElementById('mqttStatus').textContent = 'MQTT 離線';
+      });
+
+      mqttClient.on('reconnect', () => {
+        console.log('[MQTT] 重新連線中...');
+        document.getElementById('mqttStatus').textContent = 'MQTT 重新連線...';
+      });
+
+      mqttClient.on('close', () => {
+        console.log('[MQTT] 連線關閉');
+        document.getElementById('mqttDot').classList.remove('connected');
+      });
     }
 
     // Reconnect MQTT with new settings

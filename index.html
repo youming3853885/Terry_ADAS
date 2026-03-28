@@ -696,41 +696,6 @@
       tryConnect();
     }
 
-      mqttClient.on('connect', () => {
-        console.log('[MQTT] 連線成功！');
-        document.getElementById('mqttDot').classList.add('connected');
-        document.getElementById('mqttStatus').textContent = 'MQTT 已連線';
-
-        // 訂閱狀態主題
-        mqttClient.subscribe(MQTT_TOPIC_STS, (err) => {
-          if (!err) {
-            console.log('[MQTT] 已訂閱:', MQTT_TOPIC_STS);
-          }
-        });
-      });
-
-      mqttClient.on('message', (topic, message) => {
-        try {
-          const data = JSON.parse(message.toString());
-          console.log('[MQTT] 收到:', data);
-          updateLiveStatus(data);
-        } catch (e) {
-          console.error('[MQTT] JSON 解析錯誤:', e);
-        }
-      });
-
-      mqttClient.on('error', (err) => {
-        console.log('[MQTT] 連線失敗:', err.message);
-        currentUrlIndex++;
-        tryConnect();
-      });
-
-      mqttClient.on('close', () => {
-        console.log('[MQTT] 連線關閉');
-        document.getElementById('mqttDot').classList.remove('connected');
-      });
-    }
-
     // Update live status display
     function updateLiveStatus(data) {
       if (data.speed !== undefined) {

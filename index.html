@@ -653,19 +653,13 @@
       const broker = document.getElementById('inputBroker').value.trim();
       const wssPort = document.getElementById('inputWssPort').value.trim();
 
-      // 1. 建立連線連線字串 (注意：瀏覽器端 mqtt.js 會自動處理 wss 協定)
-      // 如果連線失敗，請嘗試將 connectUrl 改為 `wss://${broker}:${wssPort}/mqtt`
-      // 或者透過 options 裡的 path 參數來設定
-      const connectUrl = `wss://${broker}:${wssPort}`;
+      // 建立連線字串 (Path 直接加在 URL 與範例一致)
+      const connectUrl = `wss://${broker}:${wssPort}/mqtt`;
 
       const options = {
         clientId: 'TerryCar_Web_' + Math.random().toString(16).substr(2, 8),
-        keepalive: 60,
         clean: true,
-        connectTimeout: 5000,
-        reconnectPeriod: 2000,
-        // MQTTGO 與 EMQX 通常需要這個 path，如果連不上可以試著註解掉此行
-        path: '/mqtt',
+        reconnectPeriod: 5000,
       };
 
       console.log('%c[MQTT] 正在嘗試連線至:', 'color: #ff6b35; font-weight: bold;', connectUrl);

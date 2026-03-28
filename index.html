@@ -794,14 +794,15 @@
 
         if (result.status === 'success' && result.data) {
           allData = result.data.map(row => {
-            // 嘗試多種可能的欄位名稱
-            const pwm = row.PWM || row.pwm || row[0] || 0;
-            const speed = row.初始速度 || row.speed || row[1] || 0;
-            const obstacle = row.障礙距 || row.obstacle || row[2] || 0;
-            const ttc = row.TTC || row.ttc || row[3] || 0;
-            const brake = row.剎車距 || row.brake || row[4] || 0;
-            const buffer = row.緩衝距 || row.buffer || row[5] || 0;
-            const time = row.時間 || row.time || row[6] || '';
+            // 使用 Google Sheets 實際欄位名稱
+            // 注意：欄位名稱可能有空格
+            const pwm = row['PWM        '] || row.PWM || row.PWM || 0;
+            const speed = row['初始速度(cm/s)'] || row.初始速度 || 0;
+            const obstacle = row['障礙距離(cm)'] || row.障礙距 || 0;
+            const ttc = row.TTC || row.TTC || 0;
+            const brake = row['剎車距離'] || row.剎車距 || 0;
+            const buffer = row['緩衝距離'] || row.緩衝距 || 0;
+            const time = row.時間 || '';
 
             return {
               PWM: parseInt(pwm) || 0,

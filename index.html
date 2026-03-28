@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TTC Brake Telemetry</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0e14;
+      --bg-secondary: #141b24;
+      --bg-tertiary: #1c2530;
+      --accent-orange: #ff6b35;
+      --accent-teal: #00d4aa;
+      --accent-amber: #ffd93d;
+      --accent-red: #ff4757;
+      --text-primary: #e8eaed;
+      --text-secondary: #8b95a5;
+      --border: #2a3544;
+      --glow: 0 0 20px rgba(255, 107, 53, 0.3);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'IBM Plex Sans', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Scanline effect */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.1) 2px,
+        rgba(0, 0, 0, 0.1) 4px
+      );
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 30px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .logo-icon {
+      width: 50px;
+      height: 50px;
+      background: linear-gradient(135deg, var(--accent-orange), #ff8f5a);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      box-shadow: var(--glow);
+    }
+
+    .logo h1 {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -1px;
+    }
+
+    .logo h1 span {
+      color: var(--accent-orange);
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border: 1px solid var(--border);
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn:hover {
+      background: var(--accent-orange);
+      border-color: var(--accent-orange);
+      box-shadow: var(--glow);
+    }
+
+    .btn-danger:hover {
+      background: var(--accent-red);
+      border-color: var(--accent-red);
+    }
+
+    /* Stats Cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .stat-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s ease;
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--accent-orange);
+    }
+
+    .stat-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--accent-orange);
+      box-shadow: var(--glow);
+    }
+
+    .stat-card.teal::before { background: var(--accent-teal); }
+    .stat-card.amber::before { background: var(--accent-amber); }
+    .stat-card.red::before { background: var(--accent-red); }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .stat-card.teal .stat-value { color: var(--accent-teal); }
+    .stat-card.amber .stat-value { color: var(--accent-amber); }
+    .stat-card.red .stat-value { color: var(--accent-red); }
+
+    /* Main Content */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin-bottom: 30px;
+    }
+
+    .chart-container {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    .chart-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem;
+      color: var(--accent-orange);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .chart-title::before {
+      content: '◆';
+      font-size: 0.6rem;
+    }
+
+    .chart-wrapper {
+      position: relative;
+      height: 280px;
+    }
+
+    /* Data Table */
+    .table-container {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      overflow-x: auto;
+    }
+
+    .table-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .table-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem;
+      color: var(--accent-orange);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+    }
+
+    th {
+      text-align: left;
+      padding: 12px 16px;
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+
+    th:hover {
+      color: var(--accent-orange);
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-primary);
+    }
+
+    tr:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .delete-btn {
+      background: transparent;
+      border: 1px solid var(--accent-red);
+      color: var(--accent-red);
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      transition: all 0.2s;
+    }
+
+    .delete-btn:hover {
+      background: var(--accent-red);
+      color: var(--bg-primary);
+    }
+
+    /* Loading State */
+    .loading {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 200px;
+      color: var(--text-secondary);
+    }
+
+    .loading::after {
+      content: '';
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent-orange);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-secondary);
+    }
+
+    .empty-state h3 {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.2rem;
+      color: var(--text-primary);
+      margin-bottom: 10px;
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+      header {
+        flex-direction: column;
+        gap: 20px;
+      }
+      .header-actions {
+        width: 100%;
+        justify-content: center;
+      }
+      .logo {
+        flex-direction: column;
+        text-align: center;
+      }
+      table {
+        font-size: 0.75rem;
+      }
+      th, td {
+        padding: 8px;
+      }
+    }
+
+    /* Pulse animation for new data */
+    @keyframes pulse-glow {
+      0% { box-shadow: 0 0 0 0 rgba(255, 107, 53, 0.4); }
+      70% { box-shadow: 0 0 0 10px rgba(255, 107, 53, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(255, 107, 53, 0); }
+    }
+
+    .new-data {
+      animation: pulse-glow 1s ease-out;
+    }
+
+    /* Control Panel */
+    .control-panel {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 30px;
+    }
+
+    .control-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem;
+      color: var(--accent-orange);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .control-title::before {
+      content: '◆';
+      font-size: 0.6rem;
+    }
+
+    .control-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .control-group label {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .control-group input {
+      padding: 12px 16px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem;
+    }
+
+    .control-group input:focus {
+      outline: none;
+      border-color: var(--accent-orange);
+    }
+
+    .control-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .mqtt-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-red);
+    }
+
+    .status-dot.connected {
+      background: var(--accent-teal);
+      box-shadow: 0 0 8px var(--accent-teal);
+    }
+
+    /* Live Status */
+    .live-status {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 15px;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+
+    .live-item {
+      text-align: center;
+    }
+
+    .live-label {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .live-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="logo">
+        <div class="logo-icon">🏎️</div>
+        <h1>TTC <span>Telemetry</span></h1>
+      </div>
+      <div class="header-actions">
+        <button class="btn" onclick="refreshData()">🔄 重新整理</button>
+        <button class="btn" onclick="exportData()">📥 匯出 JSON</button>
+        <button class="btn btn-danger" onclick="clearData()">🗑️ 清除資料</button>
+      </div>
+    </header>
+
+    <!-- Control Panel -->
+    <div class="control-panel">
+      <div class="control-title">遠端控制面板</div>
+      <div class="control-grid">
+        <div class="control-group">
+          <label>馬達速度 (PWM 0-255)</label>
+          <input type="number" id="inputSpeed" min="0" max="255" value="255">
+        </div>
+        <div class="control-group">
+          <label>煞車觸發距離 (cm)</label>
+          <input type="number" id="inputBrake" min="5" max="100" value="15">
+        </div>
+      </div>
+      <div class="control-actions">
+        <button class="btn" onclick="sendConfig()">🚀 發送設定</button>
+        <div class="mqtt-status">
+          <div class="status-dot" id="mqttDot"></div>
+          <span id="mqttStatus">MQTT 未連線</span>
+        </div>
+      </div>
+      <div class="live-status">
+        <div class="live-item">
+          <div class="live-label">目前速度</div>
+          <div class="live-value" id="liveSpeed">--</div>
+        </div>
+        <div class="live-item">
+          <div class="live-label">煞車觸發</div>
+          <div class="live-value" id="liveBrake">--</div>
+        </div>
+        <div class="live-item">
+          <div class="live-label">障礙距離</div>
+          <div class="live-value" id="liveObstacle">--</div>
+        </div>
+        <div class="live-item">
+          <div class="live-label">目前狀態</div>
+          <div class="live-value" id="liveState">--</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">實驗總數</div>
+        <div class="stat-value" id="totalExperiments">0</div>
+      </div>
+      <div class="stat-card teal">
+        <div class="stat-label">平均 TTC (s)</div>
+        <div class="stat-value" id="avgTTC">0.000</div>
+      </div>
+      <div class="stat-card amber">
+        <div class="stat-label">平均剎車距 (cm)</div>
+        <div class="stat-value" id="avgBrake">0.0</div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-label">平均緩衝距 (cm)</div>
+        <div class="stat-value" id="avgBuffer">0.0</div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="main-grid">
+      <div class="chart-container">
+        <div class="chart-title">TTC vs 初始速度</div>
+        <div class="chart-wrapper">
+          <canvas id="ttcChart"></canvas>
+        </div>
+      </div>
+      <div class="chart-container">
+        <div class="chart-title">剎車距離 vs 速度</div>
+        <div class="chart-wrapper">
+          <canvas id="brakeChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Data Table -->
+    <div class="table-container">
+      <div class="table-header">
+        <div class="table-title">實驗數據記錄</div>
+        <div>
+          <select id="filterPWM" onchange="filterData()" style="padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px;">
+            <option value="">全部 PWM</option>
+            <option value="100">PWM 100</option>
+            <option value="150">PWM 150</option>
+            <option value="200">PWM 200</option>
+            <option value="255">PWM 255</option>
+          </select>
+        </div>
+      </div>
+      <table id="dataTable">
+        <thead>
+          <tr>
+            <th onclick="sortData('PWM')">PWM</th>
+            <th onclick="sortData('初始速度')">速度 (cm/s)</th>
+            <th onclick="sortData('障礙距')">障礙距 (cm)</th>
+            <th onclick="sortData('TTC')">TTC (s)</th>
+            <th onclick="sortData('剎車距')">剎車距 (cm)</th>
+            <th onclick="sortData('緩衝距')">緩衝距 (cm)</th>
+            <th onclick="sortData('時間')">時間</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <tr>
+            <td colspan="8" class="loading"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    // Google Apps Script API URL
+    const API_URL = 'https://script.google.com/macros/s/AKfycbyLbJMM8CIDVdwpZM2v6pxTtUHX-nIvFiKOgrPDUsqM6jBO9kF_YNRsGbzsmMpYhAjN/exec';
+
+    // MQTT Configuration
+    const MQTT_BROKER = 'broker.mqttgo.io';
+    const MQTT_TOPIC_CMD = 'TerryCar/cmd';
+    const MQTT_TOPIC_STS = 'TerryCar/status';
+
+    let mqttClient = null;
+    let allData = [];
+    let filteredData = [];
+    let ttcChart, brakeChart;
+    let sortColumn = null;
+    let sortAsc = true;
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      loadData();
+      initCharts();
+      connectMQTT();
+    });
+
+    // MQTT Connection
+    function connectMQTT() {
+      console.log('[MQTT] 開始連線...');
+      const clientId = 'TerryCar_Web_' + Math.random().toString(16).substr(2, 8);
+
+      // 使用完整 WebSocket URL
+      const wsUrl = `ws://${MQTT_BROKER}:8083/mqtt`;
+      console.log('[MQTT] 連線 URL:', wsUrl);
+
+      mqttClient = mqtt.connect(wsUrl, {
+        clientId: clientId,
+        clean: true,
+        connectTimeout: 10000,
+        reconnectPeriod: 5000
+      });
+
+      mqttClient.on('connect', () => {
+        console.log('[MQTT] 連線成功！');
+        document.getElementById('mqttDot').classList.add('connected');
+        document.getElementById('mqttStatus').textContent = 'MQTT 已連線';
+
+        // 訂閱狀態主題
+        mqttClient.subscribe(MQTT_TOPIC_STS, (err) => {
+          if (!err) {
+            console.log('[MQTT] 已訂閱:', MQTT_TOPIC_STS);
+          }
+        });
+      });
+
+      mqttClient.on('message', (topic, message) => {
+        try {
+          const data = JSON.parse(message.toString());
+          console.log('[MQTT] 收到:', data);
+
+          // 更新即時狀態顯示
+          updateLiveStatus(data);
+        } catch (e) {
+          console.error('[MQTT] JSON 解析錯誤:', e);
+        }
+      });
+
+      mqttClient.on('error', (err) => {
+        console.error('[MQTT] 錯誤:', err);
+        document.getElementById('mqttStatus').textContent = 'MQTT 錯誤: ' + err.message;
+      });
+
+      mqttClient.on('close', () => {
+        console.log('[MQTT] 連線關閉');
+      });
+
+      mqttClient.on('reconnect', () => {
+        console.log('[MQTT] 重新連線中...');
+        document.getElementById('mqttStatus').textContent = 'MQTT 重新連線...';
+      });
+
+      mqttClient.on('close', () => {
+        console.log('[MQTT] 連線關閉');
+        document.getElementById('mqttDot').classList.remove('connected');
+        document.getElementById('mqttStatus').textContent = 'MQTT 已關閉';
+      });
+    }
+
+    // Update live status display
+    function updateLiveStatus(data) {
+      if (data.speed !== undefined) {
+        document.getElementById('liveSpeed').textContent = 'PWM ' + data.speed;
+      }
+      if (data.brake !== undefined) {
+        document.getElementById('liveBrake').textContent = data.brake + ' cm';
+      }
+      if (data.obstacle !== undefined) {
+        document.getElementById('liveObstacle').textContent = data.obstacle.toFixed(1) + ' cm';
+      }
+      if (data.state !== undefined) {
+        const stateNames = ['待機', '行駛中', '煞車中', '完成', '中止'];
+        document.getElementById('liveState').textContent = stateNames[data.state] || '未知';
+      }
+    }
+
+    // Send configuration to ESP32 via MQTT
+    function sendConfig() {
+      const speed = parseInt(document.getElementById('inputSpeed').value);
+      const brake = parseFloat(document.getElementById('inputBrake').value);
+
+      if (isNaN(speed) || speed < 0 || speed > 255) {
+        alert('速度需為 0-255 的數值');
+        return;
+      }
+      if (isNaN(brake) || brake < 5 || brake > 100) {
+        alert('煞車距離需為 5-100 cm');
+        return;
+      }
+
+      const payload = JSON.stringify({ speed: speed, brake: brake });
+
+      if (mqttClient && mqttClient.connected) {
+        mqttClient.publish(MQTT_TOPIC_CMD, payload);
+        console.log('[MQTT] 已發送:', payload);
+        alert('已發送設定至 ESP32！\n速度: PWM ' + speed + '\n煞車觸發: ' + brake + ' cm');
+      } else {
+        alert('MQTT 未連線，請稍後再試');
+      }
+    }
+
+    // Fetch data from Google Sheets
+    async function loadData() {
+      try {
+        const response = await fetch(API_URL);
+        const result = await response.json();
+
+        if (result.status === 'success' && result.data) {
+          allData = result.data.map(row => ({
+            PWM: parseInt(row.PWM) || 0,
+            初始速度: parseFloat(row.初始速度) || 0,
+            障礙距: parseFloat(row.障礙距) || 0,
+            TTC: parseFloat(row.TTC) || 0,
+            剎車距: parseFloat(row.剎車距) || 0,
+            緩衝距: parseFloat(row.緩衝距) || 0,
+            時間: row.時間 || ''
+          }));
+          filteredData = [...allData];
+          updateStats();
+          updateCharts();
+          renderTable();
+        } else {
+          showEmptyState();
+        }
+      } catch (error) {
+        console.error('載入資料失敗:', error);
+        showEmptyState();
+      }
+    }
+
+    // Update statistics
+    function updateStats() {
+      const count = allData.length;
+      document.getElementById('totalExperiments').textContent = count;
+
+      if (count > 0) {
+        const avgTTC = allData.reduce((sum, d) => sum + d.TTC, 0) / count;
+        const avgBrake = allData.reduce((sum, d) => sum + d.剎車距, 0) / count;
+        const avgBuffer = allData.reduce((sum, d) => sum + d.緩衝距, 0) / count;
+
+        document.getElementById('avgTTC').textContent = avgTTC.toFixed(3);
+        document.getElementById('avgBrake').textContent = avgBrake.toFixed(1);
+        document.getElementById('avgBuffer').textContent = avgBuffer.toFixed(1);
+      }
+    }
+
+    // Initialize Charts
+    function initCharts() {
+      const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: '#8b95a5', font: { family: 'JetBrains Mono' } }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#8b95a5', font: { family: 'JetBrains Mono' } },
+            grid: { color: '#2a3544' }
+          },
+          y: {
+            ticks: { color: '#8b95a5', font: { family: 'JetBrains Mono' } },
+            grid: { color: '#2a3544' }
+          }
+        }
+      };
+
+      // TTC vs Speed Chart
+      ttcChart = new Chart(document.getElementById('ttcChart'), {
+        type: 'scatter',
+        data: {
+          datasets: [{
+            label: 'TTC (s)',
+            data: [],
+            backgroundColor: '#ff6b35',
+            borderColor: '#ff6b35',
+            pointRadius: 8,
+            pointHoverRadius: 12
+          }]
+        },
+        options: {
+          ...chartOptions,
+          scales: {
+            ...chartOptions.scales,
+            x: {
+              ...chartOptions.scales.x,
+              title: { display: true, text: '初始速度 (cm/s)', color: '#8b95a5' }
+            },
+            y: {
+              ...chartOptions.scales.y,
+              title: { display: true, text: 'TTC (s)', color: '#8b95a5' }
+            }
+          }
+        }
+      });
+
+      // Brake Distance Chart
+      brakeChart = new Chart(document.getElementById('brakeChart'), {
+        type: 'bar',
+        data: {
+          labels: [],
+          datasets: [{
+            label: '剎車距離 (cm)',
+            data: [],
+            backgroundColor: '#00d4aa',
+            borderColor: '#00d4aa',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          ...chartOptions,
+          scales: {
+            ...chartOptions.scales,
+            x: {
+              ...chartOptions.scales.x,
+              title: { display: true, text: '實驗編號', color: '#8b95a5' }
+            },
+            y: {
+              ...chartOptions.scales.y,
+              title: { display: true, text: '剎車距離 (cm)', color: '#8b95a5' }
+            }
+          }
+        }
+      });
+    }
+
+    // Update Charts
+    function updateCharts() {
+      // TTC vs Speed
+      const ttcData = filteredData.map(d => ({ x: d.初始速度, y: d.TTC }));
+      ttcChart.data.datasets[0].data = ttcData;
+      ttcChart.update();
+
+      // Brake Distance
+      const brakeLabels = filteredData.map((_, i) => `#${i + 1}`);
+      const brakeData = filteredData.map(d => d.剎車距);
+      brakeChart.data.labels = brakeLabels;
+      brakeChart.data.datasets[0].data = brakeData;
+      brakeChart.update();
+    }
+
+    // Render Table
+    function renderTable() {
+      const tbody = document.getElementById('tableBody');
+
+      if (filteredData.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8">
+              <div class="empty-state">
+                <h3>尚無實驗數據</h3>
+                <p>請在 ESP32 上進行測試，數據會自動上傳到此處</p>
+              </div>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = filteredData.map((d, i) => `
+        <tr>
+          <td>${d.PWM}</td>
+          <td>${d.初始速度.toFixed(1)}</td>
+          <td>${d.障礙距.toFixed(1)}</td>
+          <td style="color: var(--accent-orange)">${d.TTC.toFixed(3)}</td>
+          <td>${d.剎車距.toFixed(1)}</td>
+          <td style="color: var(--accent-teal)">${d.緩衝距.toFixed(1)}</td>
+          <td>${d.時間}</td>
+          <td><button class="delete-btn" onclick="deleteRow(${allData.indexOf(d)})">刪除</button></td>
+        </tr>
+      `).join('');
+    }
+
+    // Filter Data
+    function filterData() {
+      const pwmFilter = document.getElementById('filterPWM').value;
+
+      if (pwmFilter) {
+        filteredData = allData.filter(d => d.PWM === parseInt(pwmFilter));
+      } else {
+        filteredData = [...allData];
+      }
+
+      if (sortColumn) {
+        sortData(sortColumn, false);
+      }
+
+      updateCharts();
+      renderTable();
+    }
+
+    // Sort Data
+    function sortData(column, toggle = true) {
+      if (toggle && sortColumn === column) {
+        sortAsc = !sortAsc;
+      } else {
+        sortColumn = column;
+        sortAsc = true;
+      }
+
+      filteredData.sort((a, b) => {
+        const valA = a[column];
+        const valB = b[column];
+        return sortAsc ? valA - valB : valB - valA;
+      });
+
+      renderTable();
+    }
+
+    // Export Data
+    function exportData() {
+      const dataStr = JSON.stringify(allData, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `TTC_experiment_${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // Refresh Data
+    function refreshData() {
+      loadData();
+    }
+
+    // Clear Data (local only - just clears view)
+    function clearData() {
+      if (confirm('確定要清除本地資料嗎？這不會影響 Google Sheets 的資料。')) {
+        allData = [];
+        filteredData = [];
+        updateStats();
+        updateCharts();
+        renderTable();
+      }
+    }
+
+    // Show empty state
+    function showEmptyState() {
+      document.getElementById('tableBody').innerHTML = `
+        <tr>
+          <td colspan="8">
+            <div class="empty-state">
+              <h3>無法載入資料</h3>
+              <p>請確認 Google Apps Script 已正確部署</p>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+
+    // Auto refresh every 30 seconds
+    setInterval(loadData, 30000);
+  </script>
+</body>
+</html>
